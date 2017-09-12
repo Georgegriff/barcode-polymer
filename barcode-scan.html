@@ -1,0 +1,213 @@
+<link rel="import" href="../polymer/polymer-element.html">
+<script src="./node_modules/quagga/dist/quagga.min.js">
+
+</script>
+<dom-module id="barcode-scan">
+    <template>
+        <style>
+             :host {
+                display: block;
+            }
+
+            canvas.drawing,
+            canvas.drawingBuffer {
+                position: absolute;
+                left: 0;
+                top: 0;
+            }
+            .wrap {
+                position: relative;
+            }
+        </style>
+        <input on-click="onStart" type="button" id="btn" value="Start/Stop the scanner" />
+
+        <select on-change="_onSelect" selected="{{barcodeType}}">
+            <template is="dom-repeat" items=[[barcodeTypes]] >
+                <!-- {{item}} and {{index}} can be used in this binding scope -->
+                <option value="[[item]]">[[item]]</option>
+            </template>
+            
+        </select>
+        <div class="wrap">
+            <div id="cameraStream" class="viewport">
+            </div>
+        </div>
+
+    </template>
+
+    <script>
+        /**
+         * `barcode-scan`
+         * 
+         *
+         * @customElement
+         * @polymer
+         * @demo demo/index.html
+         */
+        class BarcodeScan extends Polymer.Element {
+            static get is() {
+                return 'barcode-scan';
+            }
+
+            onStart() {
+                if (this._scannerIsRunning) {
+                    Quagga.stop();
+                } else {
+                    this.startScanner();
+                }
+            }
+
+            static get properties() {
+                return {
+                    viewportWidth: {
+                        type: Number,
+                        value: 270
+                    },
+                    viewportHeight: {
+                        type: Number,
+                        value: 480
+                    },
+                    _scannerIsRunning: {
+                        type: Boolean,
+                        value: false
+                    },
+                    barcodeType: {
+                        type: String,
+                        value: ""
+                    },
+                    barcodeTypes: {
+                        type: Array,
+                        value: [
+                            'ean_reader',
+                            'code_128_reader',
+                            'ean_8_reader',
+                            'code_39_reader',
+                            'code_39_vin_reader',
+                            'codabar_reader',
+                            'upc_reader',
+                            'upc_e_reader',
+                            'i2of5_reader',
+                            '2of5_reader',
+                            'code_93_reader']
+                    }
+                };
+            }
+
+            _onSelect(e) {
+                this.stop();
+                this._init();
+            }
+
+            stop() {
+                Quagga.stop();
+            }
+
+            startScanner() {
+                const component = this;
+                Quagga.init({
+                    inputStream: {
+                        name: "Live",
+                        type: "LiveStream",
+                        target: this.shadowRoot.querySelector('#cameraStream'),
+                        constraints: {
+                            width: 480,
+                            height: 320,
+                            facingMode: "environment"
+                        },
+                    },
+                    numOfWorkers : 6,
+                    decoder: {
+                        readers: [
+                         //   "code_128_reader",
+                            "ean_reader",
+                            // "ean_8_reader",
+                            // "code_39_reader",
+                            // "code_39_vin_reader",
+                            // "codabar_reader",
+                            // "upc_reader",
+                            // "upc_e_reader",
+                            // "i2of5_reader"
+                        ],
+                        debug: {
+                            showCanvas: true,
+                            showPatches: true,
+                            showFoundPatches: true,
+                            showSkeleton: true,
+                            showLabels: true,
+                            showPatchLabels: true,
+                            showRemainingPatchLabels: true,
+                            boxFromPatches: {
+                                showTransformed: true,
+                                showTransformedBox: true,
+                                showBB: true
+                            }
+                        }
+                    },
+
+                }, function (err) {
+                    if (err) {
+                        console.log(err);
+                        return
+                    }
+
+                    console.log("Initialization finished. Ready to start");
+                    Quagga.start();
+
+                    // Set flag to is running
+                    component._scannerIsRunning = true;
+                });
+
+                Quagga.onProcessed(function (result) {
+                    var drawingCtx = Quagga.canvas.ctx.overlay,
+                        drawingCanvas = Quagga.canvas.dom.overlay;
+
+                    if (result) {
+                        if (result.boxes) {
+                            drawingCtx.clearRect(0, 0, parseInt(drawingCanvas.getAttribute("width")), parseInt(drawingCanvas.getAttribute("height")));
+                            result.boxes.filter(function (box) {
+                                return box !== result.box;
+                            }).forEach(function (box) {
+                                Quagga.ImageDebug.drawPath(box, { x: 0, y: 1 }, drawingCtx, { color: "green", lineWidth: 2 });
+                            });
+                        }
+
+                        if (result.box) {
+                            Quagga.ImageDebug.drawPath(result.box, { x: 0, y: 1 }, drawingCtx, { color: "#00F", lineWidth: 2 });
+                        }
+
+                        if (result.codeResult && result.codeResult.code) {
+                            Quagga.ImageDebug.drawPath(result.line, { x: 'x', y: 'y' }, drawingCtx, { color: 'red', lineWidth: 3 });
+                        }
+                    }
+                });
+
+
+                Quagga.onDetected(function (result) {
+                    component._recognise(result);
+                });
+            }
+
+            _recognise(result) {
+                this.code = result.codeResult.code;
+                this.dispatchEvent(new CustomEvent('recognise', { detail: { code: this.code } }));
+
+            }
+
+            _init() {
+                const component = this;
+
+
+
+            }
+
+            ready() {
+                super.ready();
+                this.barcodeType = this.barcodeTypes[0];
+                this._init();
+
+            }
+        }
+
+        window.customElements.define(BarcodeScan.is, BarcodeScan);
+    </script>
+</dom-module>
